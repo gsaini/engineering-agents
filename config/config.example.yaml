@@ -1,8 +1,8 @@
 # engineering-agents — reference configuration
 #
-# ${VAR} is interpolated from the environment at load time. Never put a literal
-# secret in this file. Validated against src/config/schema.ts at startup, so a
-# typo fails immediately rather than at 3am.
+# Values written as a dollar-brace reference are interpolated from the environment
+# at load time. Never put a literal secret in this file. Validated against
+# src/config/schema.ts at startup, so a typo fails immediately rather than at 3am.
 
 runtime:
   runStoreDir: .runs

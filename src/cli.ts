@@ -17,8 +17,9 @@ import type { RejectionReason } from './core/run.js';
 import { ApprovalService } from './runtime/approvals.js';
 import { BudgetGuard } from './runtime/budget.js';
 import { Orchestrator } from './runtime/orchestrator.js';
-import { WorktreeSandboxFactory } from './runtime/sandbox.js';
+import { MemorySandboxFactory, WorktreeSandboxFactory } from './runtime/sandbox.js';
 import { FileCursorStore, Watcher } from './runtime/watcher.js';
+import { DEMO_REPO, demoConnectors } from './demo.js';
 
 const USAGE = `
 engineering-agents
@@ -46,7 +47,10 @@ interface Args {
 }
 
 export function parseArgs(argv: string[]): Args {
-  const [command = 'help', ...rest] = argv;
+  // A leading flag (`eng-agents --help`) is not a command.
+  const first = argv[0];
+  const command = first && !first.startsWith('-') ? first : 'help';
+  const rest = first && !first.startsWith('-') ? argv.slice(1) : argv;
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < rest.length; i += 1) {
@@ -69,36 +73,57 @@ export function parseArgs(argv: string[]): Args {
 }
 
 async function buildDeps(config: Config, logger: Logger, dryRun: boolean): Promise<{ deps: PipelineDeps; connectors: Connectors }> {
-  const connectors = dryRun
-    ? { workItemSources: new Map(), logSources: new Map(), codeHosts: new Map(), notifiers: new Map() }
-    : buildConnectors(config);
-
   const store = new FileRunStore(resolve(config.runtime.runStoreDir));
   const budget = new BudgetGuard(store, config.guardrails.limits);
-  const sandboxes = new WorktreeSandboxFactory(resolve(config.runtime.worktreeDir), logger);
-  const runner: AgentRunner = dryRun ? new DryRunAgentRunner() : new ClaudeCodeAgentRunner(logger);
-
   const ticket = config.agents.ticketToMr;
   const logs = config.agents.logTriage;
+
+  // Dry run: in-memory everything. No credentials, no repository access, no
+  // tokens — the full pipeline is still exercised end to end.
+  if (dryRun) {
+    const demo = demoConnectors();
+    const notifier = new ConsoleNotifier('console');
+    const deps: PipelineDeps = {
+      config: withDemoMappings(config),
+      store,
+      runner: new DryRunAgentRunner(),
+      codeHost: demo.codeHost,
+      notifier,
+      approvals: new ApprovalService(store, notifier, logger),
+      budget,
+      sandboxes: new MemorySandboxFactory(resolve(config.runtime.worktreeDir)),
+      workItemSource: demo.workItemSource,
+      logSource: demo.logSource,
+      logger,
+      dryRun: true,
+    };
+    const empty: Connectors = {
+      workItemSources: new Map(),
+      logSources: new Map(),
+      codeHosts: new Map(),
+      notifiers: new Map(),
+    };
+    return { deps, connectors: empty };
+  }
+
+  const connectors = buildConnectors(config);
   const notifierId = ticket?.notifier ?? logs?.notifier ?? 'console';
   const notifier = connectors.notifiers.get(notifierId) ?? new ConsoleNotifier('console');
   const codeHostId = ticket?.codeHost ?? logs?.codeHost ?? '';
   const codeHost = connectors.codeHosts.get(codeHostId);
-  if (!codeHost && !dryRun) throw new ConfigError(`Code host "${codeHostId}" is not configured`);
+  if (!codeHost) throw new ConfigError(`Code host "${codeHostId}" is not configured`);
 
   const deps: PipelineDeps = {
     config,
     store,
-    runner,
-    // In dry-run the code host is never called for writes; a missing one is
-    // only reachable via an explicit `run` command, which reports it clearly.
-    codeHost: codeHost as PipelineDeps['codeHost'],
+    runner: new ClaudeCodeAgentRunner(logger) satisfies AgentRunner,
+    codeHost,
     notifier,
     approvals: new ApprovalService(store, notifier, logger),
     budget,
-    sandboxes,
+    sandboxes: new WorktreeSandboxFactory(resolve(config.runtime.worktreeDir), logger),
     logger,
-    dryRun,
+    dryRun: false,
   };
 
   const firstWorkItemSource = ticket?.sources[0];
@@ -107,6 +132,24 @@ async function buildDeps(config: Config, logger: Logger, dryRun: boolean): Promi
   if (firstLogSource) deps.logSource = connectors.logSources.get(firstLogSource);
 
   return { deps, connectors };
+}
+
+/**
+ * Point the configured agents at the demo repo and service, so a dry run works
+ * against any config file rather than only against one written for the demo.
+ */
+function withDemoMappings(config: Config): Config {
+  const next: Config = structuredClone(config);
+  if (next.agents.ticketToMr) {
+    next.agents.ticketToMr.repoMapping = { ...next.agents.ticketToMr.repoMapping, 'Payments\\Core': DEMO_REPO };
+  }
+  if (next.agents.logTriage) {
+    next.agents.logTriage.serviceRepoMapping = {
+      ...next.agents.logTriage.serviceRepoMapping,
+      'payments-api': DEMO_REPO,
+    };
+  }
+  return next;
 }
 
 async function main(): Promise<number> {
@@ -191,6 +234,12 @@ async function main(): Promise<number> {
         const signal = detected.signals.find((s) => s.fingerprint.startsWith(fingerprint));
         if (!signal) {
           process.stderr.write(`No signal matching "${fingerprint}" in the last ${windowMinutes}m.\n`);
+          if (detected.signals.length > 0) {
+            process.stderr.write('Available:\n');
+            for (const s of detected.signals) {
+              process.stderr.write(`  ${s.fingerprint.slice(0, 12)}  ${s.title} (${s.count} occurrences)\n`);
+            }
+          }
           return 1;
         }
         const run = await logTriage.startLogRun(deps, signal);

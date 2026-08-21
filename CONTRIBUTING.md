@@ -7,7 +7,7 @@ npm install
 cp config/config.example.yaml config/config.yaml
 cp .env.example .env
 npm run typecheck
-npm test          # 65 tests, no credentials needed
+npm test          # 69 tests, no credentials needed
 npm run dev -- run --work-item DEMO-1 --dry-run
 ```
 

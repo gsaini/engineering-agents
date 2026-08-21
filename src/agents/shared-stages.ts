@@ -223,7 +223,9 @@ export async function publishStage(
 
   if (deps.dryRun) {
     deps.logger.info('dry run: skipping push and merge request', { runId: run.meta.runId });
-    return { run: afterCost, url: `dry-run://${repo.name}/${sandbox.branch}` };
+    const url = `dry-run://${repo.name}/${sandbox.branch}`;
+    // Still recorded, so a dry run produces a complete, inspectable record.
+    return { run: await putArtefact(deps.store, afterCost, 'mergeRequestUrl', url), url };
   }
 
   // Push is restricted to this run's own branch — enforced here rather than

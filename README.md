@@ -80,17 +80,46 @@ npm install
 cp config/config.example.yaml config/config.yaml   # then edit
 cp .env.example .env                                # then fill in tokens
 
-# Validate config and connector credentials without touching anything
-npm run dev -- validate
-
-# Dry run: full pipeline, mock agent, no API calls, no writes
-npm run dev -- run --work-item DEMO-1 --dry-run
-
-# Watch mode: poll all enabled sources
-npm run dev -- watch
+npm test            # 69 tests, no credentials needed
+npm run typecheck
 ```
 
-The scaffold ships a `DryRunAgentRunner` so every pipeline is executable end-to-end with zero credentials. Swap in `ClaudeCodeAgentRunner` (Claude Agent SDK, `claude-opus-5`) when you're ready to spend tokens.
+**Try it with no credentials at all.** `--dry-run` swaps in in-memory connectors,
+a no-op sandbox, and a deterministic agent, so the full pipeline runs on a laptop
+with no tracker, no repo access, and no token spend:
+
+```bash
+# Ticket-to-MR: triage -> analyse -> plan, then park at the approval gate
+npm run dev -- run --work-item DEMO-1 --dry-run
+
+# Approve it: implement -> verify -> publish
+npm run dev -- approve <runId> --dry-run
+
+# Log-Triage: detect -> evidence -> root cause -> fix proposal
+npm run dev -- run --signal 7e79a800 --dry-run
+
+npm run dev -- status
+npm run dev -- show <runId>     # the complete run record
+```
+
+A completed dry run walks the real state machine and writes the real record:
+
+```
+TRIAGING → ANALYZING → PLANNING → AWAITING_APPROVAL
+        → IMPLEMENTING → VERIFYING → PUBLISHING → COMPLETED
+
+artefacts: triage, analysis, plan, approval, implementation, selfReview, mergeRequestUrl
+```
+
+With real credentials:
+
+```bash
+npm run dev -- validate    # config + connector health, touches nothing
+npm run dev -- watch       # poll all enabled sources
+```
+
+Swap `DryRunAgentRunner` for `ClaudeCodeAgentRunner` (Claude Agent SDK,
+`claude-opus-5`) by dropping `--dry-run` — that is the only difference.
 
 ## Configuration
 
@@ -150,7 +179,19 @@ tests/         Pipeline tests that run without credentials
 
 ## Status
 
-Design-complete, scaffold-runnable. Provider connectors ship as typed stubs with the exact request/response mapping documented — the wiring is intentionally the last mile, because it is the part that depends on your tenant, your auth model, and your queries.
+**Design-complete, scaffold-runnable.** Typecheck is clean, 69 tests pass with no
+credentials, and both pipelines execute end to end under `--dry-run`.
+
+What is real: the run state machine and event-sourced record, the connector
+interfaces and their normalisation, the guardrail enforcement (path escapes,
+command allowlisting, secret scanning, blast radius, sensitive-path routing), the
+approval flow, budget enforcement, the prompts, and the CLI.
+
+What is the last mile: the provider connectors carry the correct endpoints,
+auth, queries, and field mappings — documented in
+[docs/04-connectors.md](docs/04-connectors.md) and unit-tested against captured
+payloads — but have not been run against a live tenant. That is deliberate: it is
+the part that depends on your organisation, your auth model, and your queries.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a provider.
 

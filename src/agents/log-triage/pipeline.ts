@@ -4,7 +4,7 @@ import type { LogSource } from '../../connectors/logs/types.js';
 import { runMarker } from '../../connectors/scm/types.js';
 import { logSignalIdempotencyKey, newRunId, slugify } from '../../core/ids.js';
 import type { Plan, RootCause, Run } from '../../core/run.js';
-import { putArtefact, transition, type RunStore } from '../../core/store.js';
+import { putArtefact, setMeta, transition, type RunStore } from '../../core/store.js';
 import type { LogEvidence, LogSignal, TimeWindow } from '../../core/types.js';
 import { ApprovalService } from '../../runtime/approvals.js';
 import { invokeStage, touchesSensitivePath, type PipelineDeps } from '../context.js';
@@ -163,6 +163,7 @@ export async function runToApproval(deps: PipelineDeps, run: Run): Promise<LogPi
       baseBranch: repo.defaultBranch,
       branch,
     });
+    current = await setMeta(deps.store, current, { branch });
 
     try {
       // -------------------------------------------------------- root cause

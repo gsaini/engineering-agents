@@ -5,7 +5,13 @@ import { STAGE_SCHEMAS } from '../src/agent/schemas.js';
 import { defaultFixtures } from '../src/agent/dry-runner.js';
 import type { PipelineDeps } from '../src/agents/context.js';
 import { shouldSuppress, startLogRun } from '../src/agents/log-triage/pipeline.js';
-import { preTriage, renderQuestions, startTicketRun, runToApproval } from '../src/agents/ticket-to-mr/pipeline.js';
+import {
+  continueAfterApproval,
+  preTriage,
+  renderQuestions,
+  runToApproval,
+  startTicketRun,
+} from '../src/agents/ticket-to-mr/pipeline.js';
 import { configSchema, type Config } from '../src/config/schema.js';
 import { ConsoleNotifier } from '../src/connectors/notify/types.js';
 import { MemoryCodeHost } from '../src/connectors/scm/types.js';
@@ -315,5 +321,73 @@ describe('NEEDS_INFO rendering', () => {
     expect(out).toContain('*Default:* **enforce on new rows only**');
     expect(out).toContain('*Why it matters:*');
     expect(out).toContain("I've read: src/refunds/service.ts");
+  });
+});
+
+describe('run reload — event log is the source of truth', () => {
+  it('persists the repo and branch resolved mid-run', async () => {
+    // Regression: setting run.meta.repo in memory left the reloaded run with
+    // repo=null, so the approval message read "Repo `unknown`" and every later
+    // getRepo lookup failed. Meta changes have to go through the log.
+    const { deps } = buildDeps(testConfig());
+    const run = await startTicketRun(deps, workItem());
+    await runToApproval(deps, run);
+
+    const reloaded = await deps.store.load(run.meta.runId);
+    expect(reloaded?.meta.repo).toBe('demo-service');
+    expect(reloaded?.meta.branch).toMatch(/^agent\/pay-4412-/);
+  });
+
+  it('reaches COMPLETED with a full artefact set once approved', async () => {
+    const { deps } = buildDeps(testConfig());
+    const run = await startTicketRun(deps, workItem());
+    const parked = await runToApproval(deps, run);
+    expect(parked.run.state).toBe('AWAITING_APPROVAL');
+
+    await deps.approvals.record(run.meta.runId, 'approve', 'tester');
+    const approved = await deps.store.load(run.meta.runId);
+    const finished = await continueAfterApproval(deps, approved!);
+
+    expect(finished.outcome).toBe('completed');
+    expect(finished.run.state).toBe('COMPLETED');
+    expect(Object.keys(finished.run.artefacts).sort()).toEqual([
+      'analysis',
+      'approval',
+      'implementation',
+      'mergeRequestUrl',
+      'plan',
+      'selfReview',
+      'triage',
+    ]);
+
+    const transitions = finished.run.events.filter((e) => e.type === 'transition').map((e) => e.to);
+    expect(transitions).toEqual([
+      'TRIAGING',
+      'ANALYZING',
+      'PLANNING',
+      'AWAITING_APPROVAL',
+      'IMPLEMENTING',
+      'VERIFYING',
+      'PUBLISHING',
+      'COMPLETED',
+    ]);
+  });
+
+  it('rejects without a taxonomy reason', async () => {
+    const { deps } = buildDeps(testConfig());
+    const run = await startTicketRun(deps, workItem());
+    await runToApproval(deps, run);
+    await expect(deps.approvals.record(run.meta.runId, 'reject', 'tester')).rejects.toThrow(/taxonomy/);
+  });
+
+  it('records a rejection and stops', async () => {
+    const { deps } = buildDeps(testConfig());
+    const run = await startTicketRun(deps, workItem());
+    await runToApproval(deps, run);
+    await deps.approvals.record(run.meta.runId, 'reject', 'tester', { rejectionReason: 'wrong-approach' });
+    const rejected = await deps.store.load(run.meta.runId);
+    const result = await continueAfterApproval(deps, rejected!);
+    expect(result.run.state).toBe('REJECTED');
+    expect(result.detail).toBe('wrong-approach');
   });
 });

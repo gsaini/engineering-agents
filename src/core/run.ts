@@ -202,6 +202,7 @@ export interface RunEvent {
     | 'created'
     | 'transition'
     | 'artefact'
+    | 'meta'
     | 'note'
     | 'tool-denied'
     | 'cost'
@@ -274,6 +275,11 @@ export function applyEvent(run: Run, event: RunEvent): Run {
   }
   if (event.type === 'artefact' && event.artefact) {
     next.artefacts = { ...run.artefacts, [event.artefact]: event.payload };
+  }
+  // Repo and branch are resolved mid-run (triage picks the repo). They belong
+  // on meta, so they must go through the log or they are lost on reload.
+  if (event.type === 'meta') {
+    next.meta = { ...next.meta, ...(event.payload as Partial<RunMeta>) };
   }
   if (event.type === 'cost') {
     const p = event.payload as { stage: string; usd: number; ms: number; input: number; output: number };

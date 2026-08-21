@@ -49,6 +49,15 @@ export async function putArtefact<K extends keyof RunArtefacts>(
   return store.append(run.meta.runId, { type: 'artefact', actor, artefact: key, payload: value });
 }
 
+export async function setMeta(
+  store: RunStore,
+  run: Run,
+  patch: Partial<Pick<RunMeta, 'repo' | 'branch' | 'promptVersions'>>,
+  actor: RunActor = 'agent',
+): Promise<Run> {
+  return store.append(run.meta.runId, { type: 'meta', actor, payload: patch });
+}
+
 export async function recordCost(
   store: RunStore,
   run: Run,

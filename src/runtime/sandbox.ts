@@ -157,3 +157,27 @@ class WorktreeSandbox implements Sandbox {
     this.logger.debug('worktree disposed', { path: this.path });
   }
 }
+
+/**
+ * No-op sandbox for `--dry-run` and tests: no clone, no worktree, no commands.
+ * Lets the whole pipeline be exercised on a machine with no repo access.
+ */
+export class MemorySandboxFactory implements SandboxFactory {
+  constructor(private readonly rootDir: string = '/tmp/eng-agents-dry-run') {}
+
+  async create(input: { runId: string; branch: string }): Promise<Sandbox> {
+    return {
+      path: join(this.rootDir, input.runId),
+      branch: input.branch,
+      git: async () => '',
+      run: async () => ({ stdout: '(dry run: no command executed)', stderr: '', code: 0 }),
+      diff: async () => '',
+      diffStat: async () => ({ files: [], lines: 0 }),
+      dispose: async () => undefined,
+    };
+  }
+
+  async reapOrphans(): Promise<string[]> {
+    return [];
+  }
+}

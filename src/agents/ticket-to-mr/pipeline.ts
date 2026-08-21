@@ -2,7 +2,7 @@ import { detectInjection, loadPrompt, render, systemPrompt, untrusted } from '..
 import { analysisSchema, planSchema, triageSchema } from '../../agent/schemas.js';
 import { newRunId, slugify, workItemIdempotencyKey } from '../../core/ids.js';
 import type { Analysis, Plan, Run, SelfReview, TriageResult } from '../../core/run.js';
-import { putArtefact, transition } from '../../core/store.js';
+import { putArtefact, setMeta, transition } from '../../core/store.js';
 import type { WorkItem } from '../../core/types.js';
 import { ApprovalService } from '../../runtime/approvals.js';
 import { invokeStage, touchesSensitivePath, type PipelineDeps } from '../context.js';
@@ -149,12 +149,7 @@ export async function runToApproval(deps: PipelineDeps, run: Run): Promise<Ticke
       };
     }
 
-    current = await deps.store.append(run.meta.runId, {
-      type: 'note',
-      actor: 'system:triage',
-      payload: { repo: triage.repo },
-    });
-    current.meta.repo = triage.repo;
+    current = await setMeta(deps.store, current, { repo: triage.repo }, 'system:triage');
 
     // ------------------------------------------------------------- analyze
     await deps.budget.assertCanContinue(run.meta.runId);
@@ -169,6 +164,7 @@ export async function runToApproval(deps: PipelineDeps, run: Run): Promise<Ticke
       baseBranch: repo.defaultBranch,
       branch,
     });
+    current = await setMeta(deps.store, current, { branch });
 
     try {
       const analysisPrompt = await loadPrompt('requirement-analysis');
