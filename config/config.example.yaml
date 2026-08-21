@@ -1,0 +1,248 @@
+# engineering-agents — reference configuration
+#
+# ${VAR} is interpolated from the environment at load time. Never put a literal
+# secret in this file. Validated against src/config/schema.ts at startup, so a
+# typo fails immediately rather than at 3am.
+
+runtime:
+  runStoreDir: .runs
+  worktreeDir: .worktrees
+  pollIntervalSeconds: 120
+  maxConcurrentRuns: 5
+  resumeOnStartup: true
+  worktreeTtlHours: 24
+
+model:
+  # Model used for every stage unless a stage overrides it.
+  name: claude-opus-5
+  # Effort per stage. Cheap where it is a classification, deep where it reasons.
+  effort:
+    triage: low
+    analyze: high
+    plan: xhigh
+    rootCause: xhigh
+    implement: xhigh
+    verify: high
+    publish: low
+  maxTurnsPerStage: 60
+
+# ---------------------------------------------------------------- agents
+
+agents:
+  ticketToMr:
+    enabled: true
+    # observe | comment | propose | autonomous  — see docs/08-rollout.md
+    autonomy: propose
+    sources: [ado-main]
+    codeHost: azure-repos-main
+    notifier: slack-eng
+    workItemTypes: [Bug, "User Story", Task]
+    requireLabel: agent-ready
+    denyLabels: [no-agent, security, spike]
+    claimAssigned: false
+    triageConfidenceThreshold: 0.6
+    maxPlanRevisions: 2
+    maxFixAttempts: 3
+    approvalTtlHours: 72
+    evidence:
+      maxFilesRead: 60
+      maxBytesRead: 800000
+      includeGitHistoryDays: 90
+      includeComments: true
+      includeLinkedItems: true
+    repoMapping:
+      "Payments\\Core": payments-service
+      "Payments\\Web": payments-web
+    budgetUsdPerRun: 8
+
+  logTriage:
+    enabled: true
+    autonomy: comment
+    sources: [appinsights-prod, cw-orders]
+    codeHost: azure-repos-main
+    notifier: slack-eng
+    detection:
+      mode: new-fingerprint        # new-fingerprint | rate-threshold | slo-burn
+      windowMinutes: 15
+      minOccurrences: 25
+      minAffectedUsers: 3
+      lookbackDaysForNovelty: 7
+    suppression:
+      maxNewRunsPerHour: 3
+      knownIssues:
+        - fingerprint: "a3f9c1de"
+          reason: "Upstream vendor issue, tracked in VEN-9921"
+          expires: 2026-09-30
+    rcaConfidenceThreshold: 0.7
+    fixClasses:
+      autoPropose: [defensive, contract, logging]
+      flagOnly: [concurrency, resource]
+      neverPropose: [config, dependency]
+    verificationWindowHours: 48
+    approvalTtlHours: 24
+    maxFixAttempts: 3
+    serviceRepoMapping:
+      payments-api: payments-service
+      orders-worker: orders-service
+    budgetUsdPerRun: 10
+
+# ---------------------------------------------------------------- sources
+
+workItemSources:
+  - id: ado-main
+    provider: azure-devops
+    options:
+      organization: contoso
+      project: Payments
+      token: ${AZURE_DEVOPS_PAT}
+      # Extra WIQL predicate ANDed with the type/date filters.
+      wiql: "[System.Tags] CONTAINS 'agent-ready'"
+      areaPath: "Payments\\Core"
+
+  - id: jira-platform
+    provider: jira
+    options:
+      baseUrl: https://contoso.atlassian.net
+      email: ${JIRA_EMAIL}
+      token: ${JIRA_API_TOKEN}
+      jql: 'project = PLAT AND labels = agent-ready'
+      # Acceptance criteria is a custom field and its id differs per instance.
+      acceptanceCriteriaField: customfield_10042
+
+logSources:
+  - id: appinsights-prod
+    provider: app-insights
+    options:
+      appId: ${APPINSIGHTS_APP_ID}
+      apiKey: ${APPINSIGHTS_API_KEY}
+      service: payments-api
+      environment: production
+      detectionQuery: |
+        exceptions
+        | where timestamp > ago({{windowMinutes}}m)
+        | summarize count(), dcount(user_Id), min(timestamp), max(timestamp),
+                    any(details), make_set(application_Version, 10)
+                    by problemId, cloud_RoleName
+        | where count_ > {{minOccurrences}}
+
+  - id: cw-orders
+    provider: cloudwatch
+    options:
+      region: eu-west-1
+      logGroupNames: ["/aws/ecs/orders-worker"]
+      service: orders-worker
+      environment: production
+      maxQuerySeconds: 120
+      detectionQuery: |
+        fields @timestamp, @message, level, errorType, service
+        | filter level = "ERROR"
+        | stats count() as c, earliest(@timestamp) as first, latest(@timestamp) as last
+                by errorType, service
+        | filter c > {{minOccurrences}}
+
+  - id: splunk-legacy
+    provider: splunk
+    options:
+      baseUrl: https://splunk.contoso.com:8089
+      token: ${SPLUNK_TOKEN}
+      index: app_prod
+      service: legacy-billing
+      environment: production
+      maxSearchSeconds: 180
+      fieldMap:
+        level: log_level
+        exceptionType: exception_type
+        stack: stack_trace
+      detectionQuery: |
+        index=app_prod log_level=ERROR earliest=-{{windowMinutes}}m
+        | stats count as c, dc(user_id) as users, min(_time) as first,
+                max(_time) as last, values(stack_trace) as samples
+                by exception_type, source_module
+        | where c > {{minOccurrences}}
+
+# ---------------------------------------------------------------- code hosts
+
+codeHosts:
+  - id: azure-repos-main
+    provider: azure-repos
+    options:
+      organization: contoso
+      project: Payments
+      token: ${AZURE_DEVOPS_PAT}
+      repos:
+        - name: payments-service
+          defaultBranch: main
+          testCommand: dotnet test
+          buildCommand: dotnet build
+        - name: orders-service
+          defaultBranch: main
+          testCommand: dotnet test
+          buildCommand: dotnet build
+
+  - id: github-main
+    provider: github
+    options:
+      owner: contoso
+      token: ${GITHUB_TOKEN}
+      draftMergeRequests: true
+      repos:
+        - name: payments-web
+          defaultBranch: main
+          testCommand: npm test
+          buildCommand: npm run build
+
+notifiers:
+  - id: slack-eng
+    provider: slack
+    options:
+      botToken: ${SLACK_BOT_TOKEN}
+      signingSecret: ${SLACK_SIGNING_SECRET}
+      channel: "#eng-agents"
+      quietHours: { start: "19:00", end: "08:00", timezone: "Europe/London" }
+      authorisedApprovers: [U01ABCDEF, U02GHIJKL]
+
+  - id: console
+    provider: console
+    options: {}
+
+# ---------------------------------------------------------------- guardrails
+
+guardrails:
+  protectedPaths:
+    - ".github/workflows/**"
+    - ".azuredevops/**"
+    - "**/*.pem"
+    - "**/secrets/**"
+    - "infra/**"
+  sensitivePaths:
+    - "src/**/Auth/**"
+    - "src/**/Payments/**"
+    - "**/migrations/**"
+  allowedCommands:
+    - "npm test"
+    - "npm run build"
+    - "dotnet test"
+    - "dotnet build"
+    - "git status"
+    - "git diff"
+    - "git add"
+    - "git commit"
+  denyNetworkDuringTests: true
+  injectionDetection: true
+  redaction:
+    enabled: true
+    piiCategories: [email, phone, creditcard, nationalid]
+    extraPatterns:
+      - "INTERNAL-[A-Z0-9]{8}"
+  limits:
+    maxFilesChanged: 15
+    maxLinesChanged: 600
+    overrunFactor: 3
+    concurrentRuns: 5
+    runsPerDay: 40
+    usdPerRun: 8
+    usdPerDay: 200
+
+observability:
+  logLevel: info
+  retentionDays: 90
