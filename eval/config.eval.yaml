@@ -1,0 +1,55 @@
+# Config for offline golden-set replay: `npm run eval`.
+#
+# Agents are marked disabled because replay never touches the connector layer —
+# it runs the pipelines against in-memory sources with autonomy forced to
+# `observe` (see src/eval/replay.ts). Declaring connectors here would mean
+# declaring credentials that nothing would ever use.
+#
+# Everything the replay actually reads lives below: the model settings, the
+# triage and detection thresholds, the repo mappings, and the guardrail limits.
+
+runtime:
+  runStoreDir: .runs-eval
+  worktreeDir: .worktrees-eval
+
+model:
+  name: claude-opus-5
+  effort:
+    triage: low
+    analyze: high
+    plan: xhigh
+    rootCause: xhigh
+
+agents:
+  ticketToMr:
+    enabled: false
+    autonomy: observe
+    sources: [golden-tickets]
+    codeHost: golden
+    notifier: golden
+    workItemTypes: [Bug, "User Story", Task]
+    requireLabel: agent-ready
+    denyLabels: [no-agent, security]
+    triageConfidenceThreshold: 0.6
+    repoMapping:
+      "Payments\\Core": demo-service
+
+  logTriage:
+    enabled: false
+    autonomy: observe
+    sources: [golden-logs]
+    codeHost: golden
+    notifier: golden
+    detection:
+      mode: rate-threshold
+      windowMinutes: 15
+      minOccurrences: 25
+      minAffectedUsers: 3
+    rcaConfidenceThreshold: 0.7
+    serviceRepoMapping:
+      payments-api: demo-service
+
+guardrails:
+  limits:
+    maxFilesChanged: 15
+    maxLinesChanged: 600

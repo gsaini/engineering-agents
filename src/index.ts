@@ -30,3 +30,31 @@ export { Watcher, FileCursorStore, MemoryCursorStore, type CursorStore } from '.
 export { ApprovalService } from './runtime/approvals.js';
 export { BudgetGuard, BudgetExceededError } from './runtime/budget.js';
 export { WorktreeSandboxFactory, type Sandbox, type SandboxFactory } from './runtime/sandbox.js';
+export {
+  LADDER,
+  evaluatePromotion,
+  evaluateDemotion,
+  renderLadder,
+  rungOf,
+  specFor,
+  type Rung,
+  type LadderInput,
+} from './runtime/ladder.js';
+
+export { loadGoldenSet, clusterLabels, holdOut, GoldenSetError } from './eval/golden.js';
+export { replayGoldenSet, replayTicketCase, replayLogCase, type ReplayOptions } from './eval/replay.js';
+export { buildReport, checkRegression, renderReport, type EvalReport } from './eval/report.js';
+export { computeMetrics, selectRuns, renderMetrics, planEditDistance, type AgentMetrics } from './eval/metrics.js';
+export {
+  AgentJudge,
+  LexicalJudge,
+  judgeAgreement,
+  selectSpotCheck,
+  RCA_RUBRIC,
+  APPROACH_RUBRIC,
+  RESTATEMENT_RUBRIC,
+  type Judge,
+  type Rubric,
+} from './eval/judge.js';
+export * from './eval/scorers.js';
+export type { CaseResult, GoldenSet, GoldenTicketCase, GoldenLogCase, StageScore } from './eval/types.js';

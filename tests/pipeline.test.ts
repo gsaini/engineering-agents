@@ -56,16 +56,19 @@ class FakeSandboxFactory implements SandboxFactory {
   readonly created: string[] = [];
   readonly disposed: string[] = [];
 
+  constructor(private readonly diffStat: { files: string[]; lines: number } = { files: [], lines: 0 }) {}
+
   async create(input: { runId: string; branch: string }): Promise<Sandbox> {
     this.created.push(input.runId);
     const disposed = this.disposed;
+    const diffStat = this.diffStat;
     return {
       path: `/tmp/fake/${input.runId}`,
       branch: input.branch,
       git: async () => '',
       run: async () => ({ stdout: '', stderr: '', code: 0 }),
       diff: async () => '',
-      diffStat: async () => ({ files: [], lines: 0 }),
+      diffStat: async () => diffStat,
       dispose: async () => {
         disposed.push(input.runId);
       },
@@ -77,10 +80,13 @@ class FakeSandboxFactory implements SandboxFactory {
   }
 }
 
-function buildDeps(config: Config): { deps: PipelineDeps; sandboxes: FakeSandboxFactory } {
+function buildDeps(
+  config: Config,
+  diffStat?: { files: string[]; lines: number },
+): { deps: PipelineDeps; sandboxes: FakeSandboxFactory } {
   const store = new MemoryRunStore();
   const notifier = new ConsoleNotifier('console');
-  const sandboxes = new FakeSandboxFactory();
+  const sandboxes = new FakeSandboxFactory(diffStat);
   const deps: PipelineDeps = {
     config,
     store,
@@ -336,6 +342,40 @@ describe('run reload — event log is the source of truth', () => {
     const reloaded = await deps.store.load(run.meta.runId);
     expect(reloaded?.meta.repo).toBe('demo-service');
     expect(reloaded?.meta.branch).toMatch(/^agent\/pay-4412-/);
+  });
+
+  it('records a blast-radius breach on the run log, not only in the failure message', async () => {
+    // The retry loop can recover from a breach, and a later failure overwrites
+    // `run.failure`. Either way the breach must stay countable — it is an
+    // alert-on-any guardrail and it gates promotion (docs/07-evaluation.md).
+    const oversized = { files: Array.from({ length: 40 }, (_, i) => `src/f${i}.ts`), lines: 4000 };
+    const { deps } = buildDeps(testConfig(), oversized);
+    const run = await startTicketRun(deps, workItem());
+    await runToApproval(deps, run);
+    await deps.approvals.record(run.meta.runId, 'approve', 'tester');
+    const approved = await deps.store.load(run.meta.runId);
+    const finished = await continueAfterApproval(deps, approved!);
+
+    expect(finished.outcome).toBe('failed');
+    const breach = finished.run.events.find(
+      (e) => (e.payload as { guardrail?: string } | undefined)?.guardrail === 'blast-radius',
+    );
+    expect(breach).toBeDefined();
+    expect(finished.run.failure?.message).not.toMatch(/blast/i);
+  });
+
+  it('records a sensitive-path match on the run log so it can be counted later', async () => {
+    const config = testConfig();
+    config.guardrails.sensitivePaths = ['src/refunds/**'];
+    const { deps } = buildDeps(config);
+    const run = await startTicketRun(deps, workItem());
+    const parked = await runToApproval(deps, run);
+
+    const hit = parked.run.events.find(
+      (e) => (e.payload as { guardrail?: string } | undefined)?.guardrail === 'sensitive-path',
+    );
+    expect(hit).toBeDefined();
+    expect((hit?.payload as { pattern: string }).pattern).toBe('src/refunds/**');
   });
 
   it('reaches COMPLETED with a full artefact set once approved', async () => {

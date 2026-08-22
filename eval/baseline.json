@@ -1,0 +1,110 @@
+{
+  "variant": "offline",
+  "generatedAt": "2026-08-22T04:49:18.990Z",
+  "cases": 5,
+  "errors": 0,
+  "stages": [
+    {
+      "stage": "analyze",
+      "n": 2,
+      "mean": 0.3333333333333333,
+      "median": 0.3333333333333333,
+      "worstCases": [
+        {
+          "caseId": "PAY-4412",
+          "score": 0.3333333333333333
+        },
+        {
+          "caseId": "PAY-4501",
+          "score": 0.3333333333333333
+        }
+      ]
+    },
+    {
+      "stage": "detect",
+      "n": 2,
+      "mean": 1,
+      "median": 1,
+      "worstCases": [
+        {
+          "caseId": "INC-2026-05-19",
+          "score": 1
+        },
+        {
+          "caseId": "INC-2026-05-21",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "stage": "fix",
+      "n": 1,
+      "mean": 0.5,
+      "median": 0.5,
+      "worstCases": [
+        {
+          "caseId": "INC-2026-05-19",
+          "score": 0.5
+        }
+      ]
+    },
+    {
+      "stage": "plan",
+      "n": 2,
+      "mean": 0.34375,
+      "median": 0.34375,
+      "worstCases": [
+        {
+          "caseId": "PAY-4501",
+          "score": 0
+        },
+        {
+          "caseId": "PAY-4412",
+          "score": 0.6875
+        }
+      ]
+    },
+    {
+      "stage": "rootCause",
+      "n": 1,
+      "mean": 0.6762962962962963,
+      "median": 0.6762962962962963,
+      "worstCases": [
+        {
+          "caseId": "INC-2026-05-19",
+          "score": 0.6762962962962963
+        }
+      ]
+    },
+    {
+      "stage": "triage",
+      "n": 3,
+      "mean": 0.6666666666666666,
+      "median": 1,
+      "worstCases": [
+        {
+          "caseId": "PAY-4501",
+          "score": 0
+        },
+        {
+          "caseId": "PAY-4412",
+          "score": 1
+        },
+        {
+          "caseId": "PAY-4530",
+          "score": 1
+        }
+      ]
+    }
+  ],
+  "outcomes": {
+    "awaiting-approval": 3,
+    "skipped": 1,
+    "suppressed": 1
+  },
+  "cost": {
+    "totalUsd": 0,
+    "meanUsdPerCase": 0
+  },
+  "modelJudged": false
+}

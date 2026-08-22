@@ -111,3 +111,77 @@ For the first few months, a human should spend 30 minutes a week on:
 4. Any run with tool denials, budget stops, or a blast-radius breach
 
 Almost everything found here is fixable in the evidence bundle or the prompt. The failure pattern this catches earliest — and the most common one — is not the model reasoning badly. It is the model reasoning correctly about the wrong context.
+
+---
+
+## The harness
+
+Everything above is implemented under [`src/eval/`](../src/eval/). It runs with
+no credentials and no token spend, because an evaluation harness that only works
+against a live tenant is one nobody runs.
+
+| File | What it does |
+|---|---|
+| [`types.ts`](../src/eval/types.ts) | Golden case schemas and score types. Cases are hand-authorable: only the fields carrying signal are required |
+| [`golden.ts`](../src/eval/golden.ts) | Loads and validates `eval/golden/{tickets,logs}/*.json`, one file per case |
+| [`replay.ts`](../src/eval/replay.ts) | Drives the **real pipelines** against golden cases with in-memory connectors |
+| [`scorers.ts`](../src/eval/scorers.ts) | Per-stage scoring, all pure and all normalised to 0..1 |
+| [`judge.ts`](../src/eval/judge.ts) | Rubrics, the model judge, the deterministic fallback, and agreement measurement |
+| [`report.ts`](../src/eval/report.ts) | Aggregation and the CI regression gate |
+| [`metrics.ts`](../src/eval/metrics.ts) | The online metrics, folded out of the run event log |
+
+### Running it
+
+```bash
+npm run eval                       # offline, deterministic, free
+npm run eval -- --out eval/baseline.json    # record a baseline
+npm run eval:gate                  # compare against the baseline; non-zero exit on a drop
+npm run dev -- eval --config config/config.yaml --live --variant retrieval-v3
+```
+
+`--live` is the real evaluation: the actual model, the model judge, real spend.
+The default is a deterministic replay against fixtures — cheap enough to run on
+every pull request, which is what makes it a gate rather than a ritual.
+
+### What the code enforces, rather than asks for
+
+- **Replay cannot reach anything.** `replayConfig` forces `autonomy: observe` and
+  `dryRun: true`, so a replay over last year's tickets cannot comment on one of
+  them. Connectors are in-memory; the notifier posts nowhere.
+- **The judge cannot see the transcript.** `JudgeRequest` has fields for the
+  reference and the candidate's conclusion, and no field for the agent's
+  reasoning. A judge that reads the reasoning grades the argument, not the answer.
+- **Lexical scoring is labelled as such.** The deterministic judge returns
+  `modelJudged: false`, and the report prints "treat as a smoke test". A proxy
+  score can never be presented as a graded result.
+- **An empty reference scores zero, not one.** Missing ground truth must not read
+  as a perfect score.
+- **The gate compares deltas, not absolutes.** Absolute golden-set scores depend
+  on how the set was built; the change between two runs of the same set is the
+  part that means something.
+
+### What it cannot do offline
+
+Three of the metrics in this document need facts the run store does not hold, and
+they report `null` rather than zero when nobody supplied them:
+
+| Metric | Needs |
+|---|---|
+| MR merge rate, cost per merged MR | A code-host lookup of each MR's state |
+| Escape rate | The revert/hot-fix label, fed back from review |
+| RCA accuracy | Human confirmation from the weekly review |
+
+The implementation stage is the fourth. Scoring it means running the repo's own
+tests at the pre-fix commit and checking the agent's regression test fails there
+— `scoreImplementation` takes those two observations as inputs, because gathering
+them needs a real checkout that a golden case does not carry.
+
+### The rolling window
+
+`selectRuns(runs, { limit: 20 })` is the window the demotion triggers in
+[08-rollout.md](08-rollout.md) are defined over. A lifetime average takes months
+to move, by which point the team has already stopped reading the plans.
+
+```bash
+npm run dev -- metrics --agent ticket-to-mr --limit 20 --ladder --weeks 6
+```

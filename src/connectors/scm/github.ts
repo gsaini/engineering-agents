@@ -14,8 +14,15 @@ export const githubOptionsSchema = z.object({
   owner: z.string(),
   token: z.string(),
   baseUrl: z.string().default('https://api.github.com'),
-  /** Draft PRs are the right default at `comment` autonomy: visible, but no CI or reviewer paging. */
-  draftMergeRequests: z.boolean().default(true),
+  /**
+   * Pin every PR on this host to draft, whatever the agent asks for.
+   *
+   * Off by default: draft-versus-ready is a ladder decision made per agent
+   * (`agents.*.draftMergeRequests`, docs/08-rollout.md), and a host-level
+   * default of true made rung 3 unreachable without saying so. Set this only
+   * for a host that must never receive a review-ready agent PR.
+   */
+  forceDraft: z.boolean().default(false),
   repos: z.array(repoSchema).min(1),
 });
 
@@ -98,7 +105,7 @@ export class GitHubCodeHost implements CodeHost {
         body: input.description,
         head: input.sourceBranch,
         base: input.targetBranch,
-        draft: input.draft || this.options.draftMergeRequests,
+        draft: input.draft || this.options.forceDraft,
       }),
     });
 

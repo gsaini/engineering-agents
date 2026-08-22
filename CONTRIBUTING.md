@@ -7,7 +7,8 @@ npm install
 cp config/config.example.yaml config/config.yaml
 cp .env.example .env
 npm run typecheck
-npm test          # 69 tests, no credentials needed
+npm test          # 127 tests, no credentials needed
+npm run eval      # golden-set replay, also no credentials
 npm run dev -- run --work-item DEMO-1 --dry-run
 ```
 
@@ -36,12 +37,26 @@ That table is the contract, and vendor APIs move.
 Prompts are code:
 
 1. Bump `version:` in the prompt's front matter.
-2. Run the golden set ([docs/07-evaluation.md](docs/07-evaluation.md)). CI blocks
-   regressions beyond the threshold.
-3. Get it reviewed like a code change.
+2. Run the golden set ([docs/07-evaluation.md](docs/07-evaluation.md)):
+   `npm run eval:gate`. CI runs the same command and blocks on a per-stage drop
+   beyond tolerance.
+3. If the drop is intended, say why in the pull request and re-record the
+   baseline with `npm run eval -- --out eval/baseline.json`. Re-recording without
+   an explanation is how a gate quietly becomes a rubber stamp.
+4. Get it reviewed like a code change.
 
 The version is stamped on every run, so evaluation results stay attributable to
 an exact prompt.
+
+## Adding a golden case
+
+One JSON file per case under `eval/golden/tickets/` or `eval/golden/logs/`,
+schema in [src/eval/types.ts](src/eval/types.ts). Only the fields carrying signal
+are required — these are written by hand while reading a closed ticket.
+
+Take the work item **as it was when filed**, not as it reads after the fix, and
+record what actually happened in `truth`. Include cases the agent should *not*
+act on: a set of only success cases measures the happy path and nothing else.
 
 ## Changing a guardrail
 

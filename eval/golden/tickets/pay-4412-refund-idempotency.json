@@ -1,0 +1,41 @@
+{
+  "id": "PAY-4412",
+  "workItem": {
+    "key": "PAY-4412",
+    "rawType": "User Story",
+    "title": "Add idempotency keys to the refund API",
+    "description": "Clients retry refund requests on timeout. Each retry currently creates a new refund, so a customer can be refunded twice for one transaction.",
+    "acceptanceCriteria": "- A refund request may carry an idempotency key\n- Repeating a key returns the original refund and does not charge again\n- A request with no key behaves as it does today",
+    "labels": ["agent-ready"],
+    "areaPath": "Payments\\Core",
+    "comments": [
+      {
+        "author": "Priya",
+        "body": "Keys are client-generated UUIDs — same convention as the payments endpoint.",
+        "createdAt": "2026-05-14T10:00:00.000Z"
+      },
+      {
+        "author": "Tom",
+        "body": "What should happen if the same key arrives with a different amount?",
+        "createdAt": "2026-05-14T11:20:00.000Z"
+      }
+    ],
+    "filedAt": "2026-05-14T09:40:00.000Z"
+  },
+  "truth": {
+    "actionable": true,
+    "repo": "demo-service",
+    "changedFiles": [
+      "src/refunds/service.ts",
+      "src/refunds/repository.ts",
+      "src/refunds/service.test.ts",
+      "migrations/0042_refund_idempotency_key.sql"
+    ],
+    "approach": "Persist the client-supplied idempotency key on the refund row behind a unique index; a repeated key returns the stored refund instead of creating a second one.",
+    "ambiguities": [
+      "What happens when the same idempotency key arrives with a different refund amount?",
+      "How long should an idempotency key remain valid?"
+    ],
+    "testFiles": ["src/refunds/service.test.ts"]
+  }
+}

@@ -80,8 +80,9 @@ npm install
 cp config/config.example.yaml config/config.yaml   # then edit
 cp .env.example .env                                # then fill in tokens
 
-npm test            # 69 tests, no credentials needed
+npm test            # 127 tests, no credentials needed
 npm run typecheck
+npm run eval        # replay the golden set offline — no credentials, no spend
 ```
 
 **Try it with no credentials at all.** `--dry-run` swaps in in-memory connectors,
@@ -110,6 +111,44 @@ TRIAGING → ANALYZING → PLANNING → AWAITING_APPROVAL
 
 artefacts: triage, analysis, plan, approval, implementation, selfReview, mergeRequestUrl
 ```
+
+**Measure it before you trust it.** The evaluation harness replays historical
+cases through the real pipelines with every external system stubbed, and the
+metrics command folds the autonomy gates out of the run log:
+
+```bash
+npm run eval                        # score the golden set, offline and free
+npm run eval -- --out eval/baseline.json    # record a baseline
+npm run eval:gate                   # CI gate: non-zero exit on a per-stage drop
+
+npm run dev -- metrics --agent ticket-to-mr --limit 20 --ladder --weeks 6
+```
+
+```
+primary
+  plan acceptance       50.0%   (promote above 70%)
+  plan edit distance        —   (promote below 20%)
+  MR merge rate             —   (promote above 60%)
+  time to first plan     18.0m  (target under 30m)
+  RCA accuracy              —   (promote above 75%)
+...
+rejections: wrong-approach=1
+
+Not measured (needs code-host and weekly-review input): merge rate, escape rate, RCA accuracy.
+
+Rung 2 — propose (draft)
+  does: Everything through opening a draft merge request, after approval
+  does not: Mark merge requests ready, or merge
+
+Not yet eligible for promotion.
+  ✓ no guardrail breaches in the window
+  ✗ merge rate above 60% — not measured
+  ✗ review burden below 1.5x human — not measured
+  ✗ escape rate below 5% — not measured
+```
+
+A metric nobody measured blocks promotion and says so, rather than being counted
+as a pass — which is the difference between a gate and a formality.
 
 With real credentials:
 
@@ -167,25 +206,31 @@ Full reference: [config/config.example.yaml](config/config.example.yaml) and the
 docs/          Design docs and ADRs — the "approach" this repo is really about
 prompts/       Versioned prompt templates, one per pipeline stage
 config/        Example config + JSON schema
+eval/          Golden set (one JSON file per case) + the recorded baseline
 src/
   config/      Zod schema, loader, env interpolation
   core/        Types, run state machine, run store, logging
   connectors/  work-items | logs | scm | notify  (interface + providers)
   agent/       AgentRunner abstraction, Claude Agent SDK impl, dry-run impl
   agents/      The two pipelines, stage by stage
-  runtime/     Watcher, orchestrator, sandbox, approvals, budget
-tests/         Pipeline tests that run without credentials
+  runtime/     Watcher, orchestrator, sandbox, approvals, budget, autonomy ladder
+  eval/        Golden sets, offline replay, scorers, judge, metrics, CI gate
+tests/         Pipeline, guardrail, connector, eval and metrics tests — no credentials
 ```
 
 ## Status
 
-**Design-complete, scaffold-runnable.** Typecheck is clean, 69 tests pass with no
-credentials, and both pipelines execute end to end under `--dry-run`.
+**Design-complete, scaffold-runnable, measurable.** Typecheck is clean, 127 tests
+pass with no credentials, both pipelines execute end to end under `--dry-run`,
+and the golden set replays offline as a CI gate.
 
 What is real: the run state machine and event-sourced record, the connector
 interfaces and their normalisation, the guardrail enforcement (path escapes,
 command allowlisting, secret scanning, blast radius, sensitive-path routing), the
-approval flow, budget enforcement, the prompts, and the CLI.
+approval flow, budget enforcement, the prompts, the CLI, the evaluation harness
+(golden sets, offline replay, per-stage scorers, rubric judge with agreement
+measurement, regression gate), the online metrics folded out of the run log, and
+the autonomy ladder's promote/demote gates.
 
 What is the last mile: the provider connectors carry the correct endpoints,
 auth, queries, and field mappings — documented in

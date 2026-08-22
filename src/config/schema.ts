@@ -52,6 +52,10 @@ export const ticketToMrSchema = z.object({
   denyLabels: z.array(z.string()).default(['no-agent']),
   claimAssigned: z.boolean().default(false),
   triageConfidenceThreshold: z.number().min(0).max(1).default(0.6),
+  // Rungs 2 and 3 of the ladder are both `propose`; this is what separates
+  // them (docs/08-rollout.md). Draft is the safe default: a draft MR is visible
+  // without paging reviewers or burning CI on every agent attempt.
+  draftMergeRequests: z.boolean().default(true),
   maxPlanRevisions: z.number().int().nonnegative().default(2),
   maxFixAttempts: z.number().int().positive().default(3),
   approvalTtlHours: z.number().positive().default(72),
@@ -91,6 +95,7 @@ export const logTriageSchema = z.object({
     })
     .default({}),
   rcaConfidenceThreshold: z.number().min(0).max(1).default(0.7),
+  draftMergeRequests: z.boolean().default(true),
   fixClasses: z
     .object({
       autoPropose: z.array(z.string()).default(['defensive', 'contract', 'logging']),

@@ -1,0 +1,22 @@
+{
+  "id": "PAY-4501",
+  "workItem": {
+    "key": "PAY-4501",
+    "rawType": "User Story",
+    "title": "Investigate whether we should move to the new payments provider",
+    "description": "Finance asked whether the new provider would reduce fees. We need a recommendation before committing to anything. No code change is expected from this item.",
+    "acceptanceCriteria": "A written recommendation is circulated to the payments group.",
+    "labels": ["agent-ready"],
+    "areaPath": "Payments\\Core",
+    "comments": [],
+    "filedAt": "2026-05-20T08:00:00.000Z"
+  },
+  "truth": {
+    "actionable": false,
+    "repo": null,
+    "changedFiles": [],
+    "approach": "Closed with a decision document. No code was written.",
+    "ambiguities": [],
+    "testFiles": []
+  }
+}

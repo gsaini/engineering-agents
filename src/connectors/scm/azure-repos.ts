@@ -16,7 +16,8 @@ export const azureReposOptionsSchema = z.object({
   token: z.string(),
   baseUrl: z.string().default('https://dev.azure.com'),
   apiVersion: z.string().default('7.1'),
-  draftMergeRequests: z.boolean().default(true),
+  /** Pin every MR on this host to draft. See the note in github.ts. */
+  forceDraft: z.boolean().default(false),
   repos: z.array(repoSchema).min(1),
 });
 
@@ -97,7 +98,7 @@ export class AzureReposCodeHost implements CodeHost {
       targetRefName: `refs/heads/${input.targetBranch}`,
       title: input.title,
       description: input.description,
-      isDraft: input.draft || this.options.draftMergeRequests,
+      isDraft: input.draft || this.options.forceDraft,
       labels: [...new Set([AGENT_LABEL, ...input.labels])].map((name) => ({ name })),
     };
     if (input.workItemKey) {

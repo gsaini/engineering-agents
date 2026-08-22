@@ -267,7 +267,14 @@ export async function runToApproval(deps: PipelineDeps, run: Run): Promise<LogPi
       // ---------------------------------------------------------- approval
       const sensitive = touchesSensitivePath(plan.changes.map((c) => c.file), deps.config.guardrails);
       const warnings: string[] = [`${signal.count} occurrences since ${signal.firstSeen}`];
-      if (sensitive) warnings.push(`Touches a sensitive path (${sensitive}) — human approval required`);
+      if (sensitive) {
+        warnings.push(`Touches a sensitive path (${sensitive}) — human approval required`);
+        current = await deps.store.append(run.meta.runId, {
+          type: 'note',
+          actor: 'system:guardrails',
+          payload: { guardrail: 'sensitive-path', pattern: sensitive, files: plan.changes.map((c) => c.file) },
+        });
+      }
       if (config.fixClasses.flagOnly.includes(rca.category)) {
         warnings.push(`Fix class "${rca.category}" is flag-only — never auto-approved`);
       }
@@ -389,7 +396,7 @@ export async function continueAfterApproval(deps: PipelineDeps, run: Run): Promi
           selfReviewSummary: summariseReview(verify.outcome.review),
           testOutput: verify.outcome.testOutput,
           reviewers: [],
-          draft: config.autonomy !== 'propose',
+          draft: config.draftMergeRequests,
         });
         current = published.run;
         await sandbox.dispose();

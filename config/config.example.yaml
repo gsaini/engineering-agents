@@ -41,6 +41,8 @@ agents:
     denyLabels: [no-agent, security, spike]
     claimAssigned: false
     triageConfidenceThreshold: 0.6
+    # true = rung 2 (draft MRs), false = rung 3 (review-ready). docs/08-rollout.md
+    draftMergeRequests: true
     maxPlanRevisions: 2
     maxFixAttempts: 3
     approvalTtlHours: 72
@@ -74,6 +76,7 @@ agents:
           reason: "Upstream vendor issue, tracked in VEN-9921"
           expires: 2026-09-30
     rcaConfidenceThreshold: 0.7
+    draftMergeRequests: true
     fixClasses:
       autoPropose: [defensive, contract, logging]
       flagOnly: [concurrency, resource]
@@ -184,7 +187,8 @@ codeHosts:
     options:
       owner: contoso
       token: ${GITHUB_TOKEN}
-      draftMergeRequests: true
+      # Pin every PR on this host to draft, overriding the agent's ladder rung.
+      forceDraft: false
       repos:
         - name: payments-web
           defaultBranch: main

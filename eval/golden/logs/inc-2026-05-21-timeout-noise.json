@@ -1,0 +1,27 @@
+{
+  "id": "INC-2026-05-21",
+  "signal": {
+    "fingerprint": "c04f9911aa2b4d3c8e7f6a5b4c3d2e11",
+    "title": "TaskCanceledException in the nightly reconciliation job",
+    "service": "payments-api",
+    "environment": "production",
+    "exceptionType": "TaskCanceledException",
+    "message": "A task was canceled",
+    "topFrames": ["at Demo.Reconciliation.NightlyJob.RunAsync (NightlyJob.cs:88)"],
+    "count": 4,
+    "affectedUsers": 0,
+    "firstSeen": "2026-05-21T02:03:00.000Z",
+    "lastSeen": "2026-05-21T02:04:00.000Z",
+    "versions": ["2026.5.19"],
+    "hosts": ["payments-api-7f9c"],
+    "regions": ["westeurope"]
+  },
+  "truth": {
+    "shouldFire": false,
+    "humanDetectedAt": null,
+    "clusterLabel": "nightly-job-shutdown-cancellation",
+    "rootCause": "Expected cancellation when the nightly job is stopped by the deployment drain. Not a defect.",
+    "category": "logging",
+    "changedFiles": []
+  }
+}

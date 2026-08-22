@@ -97,3 +97,30 @@ export class ConsoleNotifier implements Notifier {
     return { ok: true, detail: 'console', checkedAt: new Date().toISOString() };
   }
 }
+
+/**
+ * Notifier that posts nowhere.
+ *
+ * Used by offline replay (`src/eval/replay.ts`), where reaching a real channel
+ * would mean an evaluation run paging a human about a ticket closed last year.
+ */
+export class NullNotifier implements Notifier {
+  readonly provider = 'null';
+  readonly messages: NotifyMessage[] = [];
+  readonly approvals: ApprovalRequest[] = [];
+
+  constructor(readonly id: string = 'null') {}
+
+  async notify(message: NotifyMessage): Promise<void> {
+    this.messages.push(message);
+  }
+
+  async requestApproval(request: ApprovalRequest): Promise<{ ticketRef: string }> {
+    this.approvals.push(request);
+    return { ticketRef: `null:${request.runId}` };
+  }
+
+  async healthCheck(): Promise<HealthStatus> {
+    return { ok: true, detail: 'null notifier', checkedAt: new Date().toISOString() };
+  }
+}

@@ -103,7 +103,15 @@ export async function verifyStage(
       run: await deps.store.append(run.meta.runId, {
         type: 'error',
         actor: 'system:guardrails',
-        payload: { stage: 'verify', message: `Secret detected in diff: ${secrets.kinds.join(', ')}` },
+        // `guardrail` is the structured marker the metrics count on. Matching on
+        // the prose instead would break the moment someone reworded it, and the
+        // alert threshold for this one is "any" (docs/07-evaluation.md).
+        payload: {
+          guardrail: 'secret-scan',
+          stage: 'verify',
+          message: `Secret detected in diff: ${secrets.kinds.join(', ')}`,
+          kinds: secrets.kinds,
+        },
       }),
       outcome: {
         ok: false,
@@ -118,7 +126,20 @@ export async function verifyStage(
   // 2. Blast radius versus the approved plan.
   const blast = checkBlastRadius(diffStat, plan.blastRadius, deps.config.guardrails);
   if (!blast.ok) {
-    return { run, outcome: { ok: false, reason: blast.reason, review: null, testOutput: '', diffStat } };
+    // Recorded even though the loop may recover on a retry: a breach that was
+    // fixed on attempt two is still a breach, and this is the counter that
+    // blocks promotion. Without an event here it would read as zero forever.
+    const noted = await deps.store.append(run.meta.runId, {
+      type: 'note',
+      actor: 'system:guardrails',
+      payload: {
+        guardrail: 'blast-radius',
+        reason: blast.reason,
+        actual: { files: diffStat.files.length, lines: diffStat.lines },
+        planned: { files: plan.blastRadius.filesChanged, lines: plan.blastRadius.linesChanged },
+      },
+    });
+    return { run: noted, outcome: { ok: false, reason: blast.reason, review: null, testOutput: '', diffStat } };
   }
 
   // 3. Build and tests, using the repo's own commands.

@@ -96,3 +96,44 @@ Be specific and be honest about the limits. Something close to:
 > If it can't work out what a ticket means, it asks specific questions in the comments. If the questions are dumb, tell us — that's a prompt bug and we fix those weekly.
 >
 > Turn it off for a ticket with the `no-agent` label. Turn it off entirely with `/agents pause`. It's owned by <name>, and every run is auditable at <link>.
+
+---
+
+## The ladder in code
+
+[`src/runtime/ladder.ts`](../src/runtime/ladder.ts) holds the table above as
+data, and the promote/demote gates as functions over the metrics in
+[07-evaluation.md](07-evaluation.md).
+
+```bash
+npm run dev -- metrics --agent ticket-to-mr --limit 20 --ladder --weeks 6
+```
+
+Three properties are enforced there rather than left to good intentions:
+
+- **A metric nobody measured blocks promotion**, and reports differently from a
+  metric that failed. Promotion needs every criterion; there is no partial credit
+  for a number that was never collected.
+- **Demotion needs one trigger and no quorum** — including "a team member asked",
+  which takes no justification and records none.
+- **There is no rung above 4.** `evaluatePromotion` refuses at the top of the
+  ladder. Merge stays human, permanently.
+
+### Rungs 2 and 3 are one config flag apart
+
+Both are `autonomy: propose`. What separates them is
+`agents.<agent>.draftMergeRequests`:
+
+```yaml
+agents:
+  ticketToMr:
+    autonomy: propose
+    draftMergeRequests: true    # rung 2 — draft MRs
+    # draftMergeRequests: false # rung 3 — review-ready MRs
+```
+
+It defaults to `true`, because arriving at `propose` should put you on rung 2
+rather than skipping one. A code host can pin drafts on for every MR it receives
+with the connector-level `forceDraft` option, which is the right control for a
+host that must never see a review-ready agent MR — and the wrong place to make
+the ladder decision, since it silently overrides whatever the agent asked for.

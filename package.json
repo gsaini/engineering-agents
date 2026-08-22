@@ -12,6 +12,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
+    "eval": "tsx src/cli.ts eval --config eval/config.eval.yaml",
+    "eval:gate": "tsx src/cli.ts eval --config eval/config.eval.yaml --baseline eval/baseline.json",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

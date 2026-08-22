@@ -1,0 +1,30 @@
+{
+  "id": "INC-2026-05-19",
+  "signal": {
+    "fingerprint": "b71c2ad4e0f34c1b9a5d6e7f80112233",
+    "title": "NullReferenceException at RefundService.ProcessAsync",
+    "service": "payments-api",
+    "environment": "production",
+    "exceptionType": "NullReferenceException",
+    "message": "Object reference not set to an instance of an object",
+    "topFrames": [
+      "at Demo.Refunds.RefundService.ProcessAsync (RefundService.cs:142)",
+      "at Demo.Refunds.RefundController.Post (RefundController.cs:57)"
+    ],
+    "count": 47,
+    "affectedUsers": 12,
+    "firstSeen": "2026-05-19T09:12:00.000Z",
+    "lastSeen": "2026-05-19T09:27:00.000Z",
+    "versions": ["2026.5.19"],
+    "hosts": ["payments-api-7f9c", "payments-api-2b41"],
+    "regions": ["westeurope"]
+  },
+  "truth": {
+    "shouldFire": true,
+    "humanDetectedAt": "2026-05-19T09:51:00.000Z",
+    "clusterLabel": "refund-import-metadata-null",
+    "rootCause": "Payments created through the bulk import path never set the provider metadata field. RefundService.ProcessAsync dereferences it without a null check, so any refund against an imported payment throws.",
+    "category": "defensive",
+    "changedFiles": ["src/refunds/service.ts", "src/refunds/service.test.ts"]
+  }
+}

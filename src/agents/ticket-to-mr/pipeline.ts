@@ -96,7 +96,7 @@ export async function runToApproval(deps: PipelineDeps, run: Run): Promise<Ticke
       current = await deps.store.append(run.meta.runId, {
         type: 'note',
         actor: 'system:guardrails',
-        payload: { injectionMarkers: injection.markers },
+        payload: { guardrail: 'injection', injectionMarkers: injection.markers },
       });
       log.warn('possible prompt injection in work item text', { markers: injection.markers });
     }
@@ -255,7 +255,17 @@ export async function runToApproval(deps: PipelineDeps, run: Run): Promise<Ticke
         deps.config.guardrails,
       );
       const warnings: string[] = [];
-      if (sensitive) warnings.push(`Touches a sensitive path (${sensitive}) — human approval required`);
+      if (sensitive) {
+        warnings.push(`Touches a sensitive path (${sensitive}) — human approval required`);
+        // Logged as well as warned: a rise in this counter means the routing is
+        // drifting, and a warning that only exists in a chat message cannot be
+        // counted later (docs/07-evaluation.md).
+        current = await deps.store.append(run.meta.runId, {
+          type: 'note',
+          actor: 'system:guardrails',
+          payload: { guardrail: 'sensitive-path', pattern: sensitive, files: plan.changes.map((c) => c.file) },
+        });
+      }
       if (plan.blastRadius.deployOrderNote) warnings.push(plan.blastRadius.deployOrderNote);
       if (injection.suspected) warnings.push('Work item text contains instruction-like content — review carefully');
 
@@ -393,7 +403,7 @@ export async function continueAfterApproval(deps: PipelineDeps, run: Run): Promi
           selfReviewSummary: summariseReview(verify.outcome.review),
           testOutput: verify.outcome.testOutput,
           reviewers: [],
-          draft: config.autonomy !== 'propose',
+          draft: config.draftMergeRequests,
         });
         current = published.run;
 

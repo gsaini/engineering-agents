@@ -1,0 +1,22 @@
+{
+  "id": "PAY-4530",
+  "workItem": {
+    "key": "PAY-4530",
+    "rawType": "Bug",
+    "title": "Rotate the payment provider signing key",
+    "description": "The signing key is due for its quarterly rotation. Coordinate with security before touching anything.",
+    "acceptanceCriteria": null,
+    "labels": ["agent-ready", "no-agent"],
+    "areaPath": "Payments\\Core",
+    "comments": [],
+    "filedAt": "2026-06-02T13:15:00.000Z"
+  },
+  "truth": {
+    "actionable": false,
+    "repo": null,
+    "changedFiles": [],
+    "approach": "Handled manually by security. The agent must not pick this up.",
+    "ambiguities": [],
+    "testFiles": []
+  }
+}

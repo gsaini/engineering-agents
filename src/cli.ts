@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { DryRunAgentRunner } from './agent/dry-runner.js';
@@ -14,8 +15,14 @@ import { ConsoleNotifier } from './connectors/notify/types.js';
 import { createLogger, type Logger } from './core/logger.js';
 import { FileRunStore } from './core/store.js';
 import type { RejectionReason } from './core/run.js';
+import { loadGoldenSet } from './eval/golden.js';
+import { AgentJudge, LexicalJudge, type Judge } from './eval/judge.js';
+import { computeMetrics, renderMetrics, selectRuns } from './eval/metrics.js';
+import { buildReport, checkRegression, renderReport, type EvalReport } from './eval/report.js';
+import { replayGoldenSet } from './eval/replay.js';
 import { ApprovalService } from './runtime/approvals.js';
 import { BudgetGuard } from './runtime/budget.js';
+import { evaluateDemotion, evaluatePromotion, renderLadder, rungOf, type Rung } from './runtime/ladder.js';
 import { Orchestrator } from './runtime/orchestrator.js';
 import { MemorySandboxFactory, WorktreeSandboxFactory } from './runtime/sandbox.js';
 import { FileCursorStore, Watcher } from './runtime/watcher.js';
@@ -34,10 +41,28 @@ engineering-agents
   eng-agents reject <runId> --reason <r>     Record a rejection (reason required)
   eng-agents pause [--agent name]            Set the kill switch for this process
   eng-agents cancel <runId>                  Cancel a run
+  eng-agents metrics [--agent name]          Report the metrics that gate autonomy
+  eng-agents eval [--baseline file]          Replay the golden set offline
 
 Options:
   --config <path>   Config file (default: config/config.yaml)
   --dry-run         No API calls, no external writes
+
+metrics:
+  --agent <name>    ticket-to-mr | log-triage
+  --since <date>    ISO date; defaults to all recorded runs
+  --limit <n>       Use only the most recent n runs (the rolling demotion window)
+  --ladder          Also report promotion and demotion against docs/08-rollout.md
+  --rung <0-4>      Current rung (default: inferred from config)
+  --weeks <n>       Weeks at the current rung, for the soak criteria
+
+eval:
+  --golden <dir>    Golden set directory (default: eval/golden)
+  --baseline <file> Compare against a recorded report; non-zero exit on a drop
+  --out <file>      Write the report JSON (use to record a new baseline)
+  --tolerance <n>   Allowed per-stage drop before the gate fails (default: 0.05)
+  --live            Use the real model and a model judge. Costs money.
+  --variant <name>  Stamp the report with a prompt/retrieval variant name
 `;
 
 interface Args {
@@ -333,6 +358,95 @@ async function main(): Promise<number> {
       });
       process.stdout.write(`${runId}: CANCELLED\n`);
       return 0;
+    }
+
+    case 'metrics': {
+      const store = new FileRunStore(resolve(config.runtime.runStoreDir));
+      const agent = typeof args.flags['agent'] === 'string' ? args.flags['agent'] : undefined;
+      const since = typeof args.flags['since'] === 'string' ? args.flags['since'] : undefined;
+      const limit = typeof args.flags['limit'] === 'string' ? Number(args.flags['limit']) : undefined;
+
+      const runs = selectRuns(await store.list(), {
+        ...(agent ? { agent } : {}),
+        ...(since ? { since } : {}),
+        ...(limit ? { limit } : {}),
+      });
+      if (runs.length === 0) {
+        process.stdout.write('No runs recorded yet.\n');
+        return 0;
+      }
+
+      const metrics = computeMetrics({ runs });
+      process.stdout.write(`${renderMetrics(metrics, agent ?? 'all agents')}\n`);
+
+      if (args.flags['ladder'] === true) {
+        const agentConfig = agent === 'log-triage' ? config.agents.logTriage : config.agents.ticketToMr;
+        const rung =
+          typeof args.flags['rung'] === 'string'
+            ? (Number(args.flags['rung']) as Rung)
+            : rungOf(agentConfig?.autonomy ?? 'observe', agentConfig?.draftMergeRequests ?? true);
+        const weeks = typeof args.flags['weeks'] === 'string' ? Number(args.flags['weeks']) : 0;
+        const input = { rung, metrics, weeksAtRung: weeks };
+        process.stdout.write(`\n${renderLadder(evaluatePromotion(input), evaluateDemotion(input))}\n`);
+      }
+      return 0;
+    }
+
+    case 'eval': {
+      const goldenDir = String(args.flags['golden'] ?? 'eval/golden');
+      const set = await loadGoldenSet(goldenDir);
+      if (set.tickets.length === 0 && set.logs.length === 0) {
+        process.stderr.write(`No golden cases found under ${goldenDir}.\n`);
+        return 1;
+      }
+
+      // Default is free and deterministic, so the gate can run on every PR.
+      // --live spends real money and is what a weekly or pre-release run uses.
+      const live = args.flags['live'] === true;
+      // Pipeline logging is per-run and would interleave with the report; the
+      // report is the output of this command, so warnings and errors only.
+      const evalLogger = createLogger('warn');
+      const runner: AgentRunner = live ? new ClaudeCodeAgentRunner(evalLogger) : new DryRunAgentRunner();
+      const judge: Judge = live ? new AgentJudge(runner, config.model.name) : new LexicalJudge();
+
+      process.stdout.write(
+        `Replaying ${set.tickets.length} ticket and ${set.logs.length} log cases ` +
+          `${live ? 'against the live model' : 'offline (deterministic fixtures)'}...\n\n`,
+      );
+
+      const results = await replayGoldenSet(
+        {
+          config,
+          runner,
+          judge,
+          logger: evalLogger,
+          ...(typeof args.flags['variant'] === 'string' ? { variant: args.flags['variant'] } : {}),
+        },
+        set,
+      );
+      const report = buildReport(results, {
+        variant: String(args.flags['variant'] ?? (live ? 'live' : 'offline')),
+        modelJudged: live,
+      });
+
+      let verdict;
+      const baselinePath = args.flags['baseline'];
+      if (typeof baselinePath === 'string') {
+        const baseline = JSON.parse(await readFile(baselinePath, 'utf8')) as EvalReport;
+        verdict = checkRegression(report, baseline, {
+          ...(typeof args.flags['tolerance'] === 'string' ? { tolerance: Number(args.flags['tolerance']) } : {}),
+        });
+      }
+
+      process.stdout.write(`${renderReport(report, verdict)}\n`);
+
+      const outPath = args.flags['out'];
+      if (typeof outPath === 'string') {
+        await writeFile(outPath, `${JSON.stringify(report, null, 2)}\n`);
+        process.stdout.write(`\nReport written to ${outPath}\n`);
+      }
+
+      return verdict && !verdict.pass ? 1 : 0;
     }
 
     case 'pause': {
